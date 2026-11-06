@@ -1,0 +1,6 @@
+# MapFetch 开发依赖（含运行时全部依赖）
+# 安装：pip install -r requirements-dev.txt
+-r requirements.txt
+
+pytest>=8.0
+ruff>=0.4

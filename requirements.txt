@@ -1,0 +1,32 @@
+# MapFetch 运行时依赖（Python 3.11 / 3.12，Windows x64）
+# 与 pyproject.toml 的 dependencies 保持一致；安装：pip install -r requirements.txt
+#
+# 分层说明：
+#   核心链路（fetch/AOI/坐标/限速/缓存）  —— 前 2 项即够用
+#   引擎 A（瓦片下载）                     —— + httpx
+#   栅格拼接 / GeoTIFF / 矢量化            —— + numpy/Pillow/rasterio/scikit-image/geopandas/pyogrio/shapely
+#   引擎 B（JS 渲染）                      —— + selenium（另需 Firefox + geckodriver）
+#   GUI                                   —— + PySide6
+
+# --- 核心 ---
+PyYAML>=6.0
+pydantic>=2.5
+
+# --- 引擎 A ---
+httpx>=0.27
+
+# --- 栅格与矢量处理 ---
+numpy>=1.26
+Pillow>=10.0
+rasterio>=1.3
+scikit-image>=0.22
+shapely>=2.0
+geopandas>=0.14
+pyogrio>=0.7
+
+# --- 引擎 B ---
+selenium>=4.15
+
+# --- GUI ---
+# 固定 6.8.x：6.11 在 conda 环境与 conda-forge ICU 符号版本冲突（Qt6Core 导入 icuuc.dll 报"找不到指定的程序"）
+PySide6==6.8.3

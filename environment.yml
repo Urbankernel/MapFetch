@@ -1,0 +1,29 @@
+# MapFetch conda 环境（推荐方式）
+# 使用：conda env create -f environment.yml && conda activate mapfetch
+# conda-forge 对 rasterio/geopandas 的二进制依赖最稳，Windows 上优先于 pip
+name: mapfetch
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12
+  # --- 核心 ---
+  - pyyaml>=6.0
+  - pydantic>=2.5
+  # --- 引擎 A ---
+  - httpx>=0.27
+  # --- 栅格与矢量处理 ---
+  - numpy>=1.26
+  - pillow>=10.0
+  - rasterio>=1.3
+  - scikit-image>=0.22
+  - shapely>=2.0
+  - geopandas>=0.14
+  # --- 引擎 B ---
+  - selenium>=4.15
+  # --- pip 补充（conda-forge 无或版本滞后） ---
+  - pip
+  - pip:
+      - pyogrio>=0.7
+      # 固定 6.8.x：6.11 与 conda-forge ICU 符号版本冲突（见 installation.md §6）
+      - PySide6==6.8.3

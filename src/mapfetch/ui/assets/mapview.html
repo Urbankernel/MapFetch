@@ -1,0 +1,270 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>MapFetch 预览</title>
+<!-- Leaflet 本地化（assets/leaflet/）：file:// 页面被 QtWebEngine 禁止加载远程脚本，
+     故必须本地引用；也避免 jsdelivr 在国内网络不稳定导致整页白屏。 -->
+<link rel="stylesheet" href="leaflet/leaflet.css">
+<script src="leaflet/leaflet.js"></script>
+<style>
+  html, body, #map { width: 100%; height: 100%; margin: 0; }
+  #toolbar { position: absolute; z-index: 1000; top: 10px; right: 10px;
+             background: #fff; padding: 6px 8px; border-radius: 6px;
+             font: 13px sans-serif; box-shadow: 0 1px 4px rgba(0,0,0,.3); }
+  #toolbar button { margin-right: 4px; }
+  #status { color: #666; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="toolbar">
+  <button onclick="startRect()">矩形框选</button>
+  <button onclick="startPolygon()">多边形绘制</button>
+  <button onclick="clearAOI()">清除</button>
+  <div id="status">默认：天地图静态地图</div>
+</div>
+<script>
+var cfg = window.MAPFETCH_CONFIG || { online: false, source: 'tianditu',
+  style: 'vec_w', minNativeZoom: null, maxNativeZoom: null,
+  basemapStyle: 'vec_w', basemapFallback: 'img_w' };
+// 默认定位上海市人民广场（WGS84，天地图无偏移），z12 城市尺度便于框选 AOI。
+var map = L.map('map').setView([31.2304, 121.4737], 12);
+
+// 本地缓存瓦片层（R-4：默认；{source}/{style}/{z}/{x}/{y}.png 目录约定，§7.6）
+// minNativeZoom/maxNativeZoom：缩放超出已缓存层级时拉伸已有瓦片，而不是直接空白。
+function makeLocalLayer(source, style, minZ, maxZ) {
+  var opts = { maxZoom: 18, keepBuffer: 3, updateWhenZooming: false,
+               attribution: '本地缓存（' + source + '/' + style + '）' };
+  if (minZ !== null && minZ !== undefined) { opts.minNativeZoom = minZ; }
+  if (maxZ !== null && maxZ !== undefined) { opts.maxNativeZoom = maxZ; }
+  return L.tileLayer('/cache/' + source + '/' + style + '/{z}/{x}/{y}.png', opts);
+}
+var localSource = cfg.source, localStyle = cfg.style;
+var localLayer = makeLocalLayer(localSource, localStyle,
+                                cfg.minNativeZoom, cfg.maxNativeZoom);
+// 在线底图改用天地图静态地图服务（staticimage）：一次请求返回整张 PNG，
+// 相比逐瓦片拼接显著加快加载。静态图经本地代理 /static 转发天地图
+// （带 Referer；tk 留在服务端，不进前端）。底图固定用矢量样式（basemapStyle），
+// 经 staticLayers 映射为静态图层组合；加载失败时降级到影像（basemapFallback）。
+var STATIC_LAYERS = {
+  'vec_w': 'vec_c,cva_c',   // 矢量底图 + 中文注记
+  'img_w': 'img_c,cva_c',   // 影像 + 中文注记
+  'ter_w': 'ter_c,cta_c',   // 地形 + 地形注记
+  'cva_w': 'cva_c',         // 仅中文注记
+  'cia_w': 'img_c,cva_c',   // 影像注记 → 静态图无对应，退回影像
+  'ibo_w': 'vec_c,cva_c'    // 全球境界 → 退回矢量
+};
+function staticLayers(style) {
+  return STATIC_LAYERS[style] || 'vec_c,cva_c';
+}
+// 层级：在线静态底图(100) < 本地缓存瓦片 tilePane(200) < AOI overlayPane(400)
+map.createPane('onlinebase');
+map.getPane('onlinebase').style.zIndex = 100;
+
+var online = !!cfg.online;
+var onlineImage = null;          // 当前在线静态图 overlay
+var onlineTriedFallback = false; // 本次加载是否已尝试过降级样式
+var onlineTimer = null;          // moveend 防抖计时器
+var onlineRetryCount = 0;        // 连续失败自动重试计数（load 成功即清零）
+var onlineRetryTimer = null;     // 自动重试计时器
+
+function staticUrl(layers, center, zoom, w, h) {
+  return '/static?layers=' + encodeURIComponent(layers) +
+         '&center=' + center.lng.toFixed(6) + ',' + center.lat.toFixed(6) +
+         '&zoom=' + zoom + '&width=' + w + '&height=' + h;
+}
+
+function removeOnlineImage() {
+  if (onlineImage) { map.removeLayer(onlineImage); onlineImage = null; }
+}
+
+function showStatic(layers, b) {
+  var c = b.getCenter();
+  // 天地图静态图服务 zoom 限 [3,18]：越界请求必然失败，先钳制
+  var zoom = Math.max(3, Math.min(18, Math.round(map.getZoom())));
+  var size = map.getSize();
+  // 静态图尺寸上限 1024：超限按比例缩放，等比铺满视口（中心对齐，地理仍精确）
+  var scale = Math.min(1, 1024 / size.x, 1024 / size.y);
+  var w = Math.max(1, Math.round(size.x * scale));
+  var h = Math.max(1, Math.round(size.y * scale));
+  removeOnlineImage();
+  var img = L.imageOverlay(staticUrl(layers, c, zoom, w, h), b, {
+    pane: 'onlinebase', attribution: '© 国家基础地理信息中心' });
+  img.on('error', function () {
+    // 主样式失败 → 降级 fallback 样式（用当前视口而非过期 bounds）；
+    // 再失败 → 自动重试 2 次，仍失败才回退本地缓存（避免偶发失败后一直空白）
+    if (!onlineTriedFallback && cfg.basemapFallback) {
+      onlineTriedFallback = true;
+      showStatic(staticLayers(cfg.basemapFallback), map.getBounds());
+      return;
+    }
+    onlineTriedFallback = false;
+    removeOnlineImage();
+    if (onlineRetryCount < 2) {
+      onlineRetryCount += 1;
+      document.getElementById('status').textContent =
+        '在线底图加载失败，3 秒后自动重试（' + onlineRetryCount + '/2）…';
+      if (onlineRetryTimer) { clearTimeout(onlineRetryTimer); }
+      onlineRetryTimer = setTimeout(loadOnlineBase, 3000);
+    } else {
+      onlineRetryCount = 0;
+      online = false;
+      if (!map.hasLayer(localLayer)) { localLayer.addTo(map); }
+      document.getElementById('status').textContent =
+        '在线底图多次加载失败，已回退本地缓存预览；请检查网络后重新勾选「在线底图」重试';
+    }
+  });
+  img.on('load', function () {
+    onlineTriedFallback = false;
+    onlineRetryCount = 0;   // 成功即清零，后续偶发失败重新计次
+  });
+  onlineImage = img;
+  img.addTo(map);
+}
+
+function loadOnlineBase() {
+  if (!online) { return; }
+  showStatic(staticLayers(cfg.basemapStyle), map.getBounds());
+}
+
+// 拖动/缩放结束后重载静态图（防抖，避免拖动过程中频繁请求上游）
+map.on('moveend', function () {
+  if (!online) { return; }
+  if (onlineTimer) { clearTimeout(onlineTimer); }
+  onlineTimer = setTimeout(loadOnlineBase, 200);
+});
+
+// 在线模式：仅加载天地图静态底图（本地抓取的数据已落盘，GUI 无需再叠加缓存瓦片）；
+// 本地模式（取消勾选 / 静态图加载失败）：仅本地缓存层。
+if (online) { loadOnlineBase(); }
+else { localLayer.addTo(map); }
+
+var aoiLayer = null;
+var aoiGeometry = null;   // 程序化显示（手动输入/行政区解析）时的原始 GeoJSON 几何
+var drawing = null;
+var lastDrawMode = null;   // 最近一次绘制完成的模式：'rect' | 'polygon'（程序化显示时为 null）
+var drawEnabled = false;   // 是否允许地图框选/绘制（由左侧「AOI 方式」决定）
+var drawHintTimer = null;  // 框选提示自动清除的计时器
+
+function setAOI(layer) {
+  if (aoiLayer) { map.removeLayer(aoiLayer); }
+  aoiLayer = layer;
+  layer.addTo(map);
+}
+function drawModeHint() {
+  var s = document.getElementById('status');
+  s.textContent = '请先在左侧「AOI 方式」中选择「地图绘制范围」，再使用框选/绘制';
+  if (drawHintTimer) { clearTimeout(drawHintTimer); }
+  drawHintTimer = setTimeout(function () { s.textContent = statusText(); }, 3000);
+}
+function startRect() {
+  if (!drawEnabled) { drawModeHint(); return; }
+  clearAOI();
+  // 关键：矩形框选用「按下 → 拖拽 → 松开」绘制，但 Leaflet 默认把同样的
+  // 鼠标拖拽识别为地图平移（dragging）。不临时禁用 dragging，用户一拖就被
+  // 判成平移、地图跟着动，矩形画不出来（多边形用 click 点选、不拖拽，故正常）。
+  if (map.dragging) { map.dragging.disable(); }
+  map.once('mousedown', function(e1) {
+    var rect = L.rectangle(L.latLngBounds(e1.latlng, e1.latlng),
+                           {color: '#d85a30'});
+    setAOI(rect);
+    var onMove = function(e2) {
+      rect.setBounds(L.latLngBounds(e1.latlng, e2.latlng));
+    };
+    map.on('mousemove', onMove);
+    map.once('mouseup', function(e2) {
+      map.off('mousemove', onMove);   // 只解绑本框的 mousemove，不误伤其他监听
+      rect.setBounds(L.latLngBounds(e1.latlng, e2.latlng));
+      if (map.dragging) { map.dragging.enable(); }  // 画完恢复平移
+      lastDrawMode = 'rect';
+    });
+  });
+}
+function startPolygon() {
+  if (!drawEnabled) { drawModeHint(); return; }
+  clearAOI();
+  var pts = [];
+  var poly = null;
+  function redraw() {
+    if (poly) { map.removeLayer(poly); }
+    poly = L.polygon(pts, {color: '#d85a30'});
+    setAOI(poly);
+  }
+  map.on('click', function h(e) { pts.push(e.latlng); redraw(); });
+  map.once('dblclick', function() {
+    map.off('click');
+    if (pts.length >= 3) { redraw(); lastDrawMode = 'polygon'; }
+  });
+}
+function clearAOI() {
+  if (aoiLayer) { map.removeLayer(aoiLayer); aoiLayer = null; }
+  aoiGeometry = null;
+  map.off('click'); map.off('mousemove');
+  // 兜底恢复地图平移（矩形框选期间会临时禁用，见 startRect；切换/清除时确保恢复，
+  // 避免「画矩形中途切到多边形/清除」后地图无法平移）
+  if (map.dragging) { map.dragging.enable(); }
+}
+
+// ---- Python 侧调用接口（mapview.py） ----
+window.mapfetchGetAOI = function() {
+  if (aoiGeometry) { return aoiGeometry; }
+  return aoiLayer ? aoiLayer.toGeoJSON().geometry : null;
+};
+window.mapfetchGetAOIState = function() {
+  return { mode: lastDrawMode, geometry: mapfetchGetAOI() };
+};
+window.mapfetchSetRect = function(w, s, e, n) {
+  setAOI(L.rectangle([[s, w], [n, e]], {color: '#d85a30'}));
+  map.fitBounds([[s, w], [n, e]]);
+};
+window.mapfetchSetGeometry = function(geojson) {
+  // 显示手动输入/行政区解析得到的 AOI 几何（GeoJSON，WGS84，[lng,lat] 顺序）。
+  // lastDrawMode 置 null，使「绘制后自动捕获」轮询跳过，不覆盖手动/行政区规格。
+  var data = (typeof geojson === 'string') ? JSON.parse(geojson) : geojson;
+  clearAOI();
+  var layer = L.geoJSON(data, {
+    style: { color: '#d85a30', weight: 2, fillOpacity: 0.08 } });
+  aoiLayer = layer;
+  aoiGeometry = data;
+  lastDrawMode = null;
+  layer.addTo(map);
+  map.fitBounds(layer.getBounds());
+};
+window.mapfetchSetDrawEnabled = function(on) {
+  drawEnabled = !!on;
+  // 切换模式时清除可能残留的框选提示，恢复为正常状态栏
+  if (drawHintTimer) { clearTimeout(drawHintTimer); drawHintTimer = null; }
+  document.getElementById('status').textContent = statusText();
+};
+function statusText() {
+  return online ? '天地图静态底图（' + cfg.basemapStyle + '）'
+                : '本地缓存预览（' + localSource + '/' + localStyle +
+                  '，仅已缓存区域；勾选「在线底图」可切回静态底图）';
+}
+window.mapfetchSetOnline = function(on) {
+  online = on;
+  if (on) {
+    if (map.hasLayer(localLayer)) { map.removeLayer(localLayer); }
+    loadOnlineBase();                          // 加载在线静态底图
+  } else {
+    removeOnlineImage();                       // 回退本地缓存预览
+    if (!map.hasLayer(localLayer)) { localLayer.addTo(map); }
+  }
+  document.getElementById('status').textContent = statusText();
+};
+// 数据源/图层样式联动（app.py 调用）：只重建本地缓存层；在线底图固定
+// basemapStyle（静态矢量底图），不随抓取样式变化。
+window.mapfetchSetLayer = function(source, style, minZ, maxZ) {
+  localSource = source; localStyle = style;
+  map.removeLayer(localLayer);
+  localLayer = makeLocalLayer(source, style, minZ, maxZ);
+  if (!online) { localLayer.addTo(map); }  // 仅本地模式叠加缓存层
+  document.getElementById('status').textContent = statusText();
+};
+// 初始化状态栏（打开即显示当前模式提示）
+document.getElementById('status').textContent = statusText();
+
+</script>
+</body>
+</html>

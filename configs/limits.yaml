@@ -1,0 +1,30 @@
+# 限速与配额（保守基线；docs/configuration.md §2）
+# 第一原则：不把对方服务打挂、不被封号、不违约。用户上调需二次确认并写入日志。
+rate_limits:
+  tianditu:   { qps: 1, burst: 2, max_concurrent: 2, daily_budget: 8000 }   # 个人配额 1 万/日预留余量；全源最保守
+  amap_tile:  { qps: 2, burst: 5, max_concurrent: 4, daily_budget: 5000 }
+  amap_rest:  { qps: 1, burst: 2, max_concurrent: 2, daily_budget: 1000 }
+  baidu_tile: { qps: 2, burst: 5, max_concurrent: 4, daily_budget: 5000 }
+  baidu_rest: { qps: 1, burst: 2, max_concurrent: 2, daily_budget: 1000 }
+
+retry:
+  max_attempts: 4
+  backoff_base_sec: 1.0
+  backoff_max_sec: 60
+  jitter: 0.3            # 均匀抖动 ±30%
+
+circuit_breaker:
+  warn_at: 0.8           # 达日预算 80% 告警
+  stop_at: 1.0           # 达 100% 熔断停止
+  consecutive_429_threshold: 5
+
+task_thresholds:         #  硬阈值，超限需二次确认
+  max_tiles: 50000
+  max_duration_hours: 4
+  max_disk_gb: 20
+
+cache:
+  dir: cache/tiles
+  expire_days: 30        # 呼应"不得长期存储"条款；过期标记不自动删除
+
+allow_rate_increase: true   # 允许上调但需二次确认并写日志；不提供一键解除限速

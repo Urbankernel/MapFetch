@@ -1,0 +1,85 @@
+# ============================================================
+# MapFetch 任务配置示例（一个项目 = 一份配置，四个命令共享）
+# 使用：cp configs/example.yaml configs/config.yaml 后按需修改
+#       mapfetch fetch          # 默认读 configs/config.yaml
+#       mapfetch render
+#       mapfetch floors
+#       mapfetch vectorize
+# 优先级：命令行同名参数 > 命令节 > common 节 > 内置默认
+# ============================================================
+
+# ------------------------------------------------------------
+# common：所有命令共用的公共上下文
+# ------------------------------------------------------------
+common:
+  aoi: "admin:310109"        # 例：上海虹口区（6 位国标码）；AOI 四种写法见下
+  out: run/demo/             # 项目输出目录（fetch/render/floors 共用）
+  project: demo              # 导出文件名前缀（缺省 mapfetch_project/mapfetch_render/...）
+  yes: false                 # true = 跳过交互确认（含高德/百度风险告知，非交互执行）
+
+# ------------------------------------------------------------
+# 工作区域 AOI（四种写法四选一，写在 common.aoi）
+#   rect:    "rect:minLon,minLat,maxLon,maxLat"   （WGS84 经纬度）
+#   circle:  "circle:lon,lat,radius_m"            （中心点 + 半径米）
+#   admin:   "admin:名称或编码"                   （DataV GeoAtlas 详细边界，无需 Key）
+#   file:    "file:路径(.geojson/.gpkg/.shp)"      （本地 GeoJSON / GeoPackage / Shapefile，非 WGS84 自动转 WGS84）
+#
+#   rect/circle 支持「@坐标系」后缀（可选，默认 wgs84），方便直接用
+#   百度/高德「坐标拾取」网页得到的坐标值：
+#     @wgs84     经纬度即 WGS84（默认，可省略）
+#     @gcj02     高德/腾讯坐标拾取网页给出的火星坐标
+#     @bd09      百度坐标拾取网页给出的百度经纬度
+#     @cgcs2000  天地图（与 WGS84 工程等价）
+#   例："rect:121.495317,31.280871,121.508312,31.287382@gcj02"、"circle:121.511000,31.288927,500@bd09"
+# ------------------------------------------------------------
+
+# ------------------------------------------------------------
+# fetch：引擎 A 瓦片下载
+# ------------------------------------------------------------
+fetch:
+  source: tianditu           # tianditu(默认，CGCS2000) / amap(GCJ02) / baidu(BD09MC)
+  style: img_w               # tianditu: img_w/vec_w/cia_w/cva_w/ter_w/ibo_w
+                             # amap: satellite/street/street_lite/road；baidu: street/satellite
+  levels: "15-17"            # 字符串 "15-17" 或列表 [15,16,17]；天地图影像最高 18 级
+  output_crs: WGS84       # 成果坐标系：WGS84(默认)
+  no_mosaic: false           # true = 只下载瓦片，不拼接 GeoTIFF
+
+# ------------------------------------------------------------
+# render：引擎 B JS 渲染截图（道路/建筑/水系/绿地）
+# ------------------------------------------------------------
+render:
+  template: bld              # rd(道路) / bld(建筑) / water(水系) / green(绿地)
+  zoom: 17                   # 14–20，建筑需 ≥17
+  window: 2000               # 窗口像素边长
+  wait: 1.0                  # 窗口移动后等待秒数
+  reclassify: true           # rd/bld 二值化输出（water/green 自动分离，无需此开关）
+  threshold: null            # 二值化阈值（null=用默认：道路 120 / 建筑 40）
+  no_merge: false            # true = 按 4×4 窗分块输出（默认单张拼接）
+  headless: true            # true = 无头模式运行 Firefox
+
+# ------------------------------------------------------------
+# floors：建筑层数扫描（3D 遮挡法，固定 z17）
+# ------------------------------------------------------------
+floors:
+  floor_min: 0               # 起始层数档位
+  floor_max: 36              # 结束层数档位
+  floor_step: 3              # 步长（须整除 max-min）
+  wait: 1.0
+  no_merge: false            # true = 按窗口分文件（默认合并单张层数图）
+  headless: true
+
+# ------------------------------------------------------------
+# vectorize：栅格 → 矢量
+#   input 缺省时按 kind 自动定位上游产物（render/floors 的导出路径）
+# ------------------------------------------------------------
+vectorize:
+  kind: floors               # road / building / water / green / floors
+  input: null                # 缺省自动定位（用 common.out + 下面的 out_dir/project/zoom）
+  out: run/demo/vector/demo_floors.gpkg   # 导出文件（.gpkg/.shp/.geojson）
+  min_area: 10.0             # 小面剔除阈值 m²
+  threshold: 100             # 二值化亮度阈值
+  simplify: 0.7              # 道路中心线抽稀容差（像素，0=禁用；消除台阶锯齿）
+  floor_step: 3              # kind=floors 时的高度换算步长（须与 floors.floor_step 一致；默认 3）
+  # out_dir: run/demo/       # 可选：上游产物所在项目目录（默认取 common.out）
+  # project: demo            # 可选：上游产物项目名（默认 mapfetch_render / mapfetch_floors）
+  # zoom: 17                 # 可选：上游 render 层级（默认 17）

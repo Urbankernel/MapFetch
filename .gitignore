@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+
+# 工具运行时产物
+cache/
+run/
+tools/
+logs/
+*.log
+geckodriver.log
+.pytest_cache/
+
+# 密钥与本地配置（任何情况下不入库）
+key.txt
+configs/keys.txt
+configs/config.yaml
+*.key
+.env
+
+# 地图数据（大文件，且受数据源条款约束，不入库）
+*.tif
+*.tiff
+*.ovr
+*.vrt
+*.mbtiles
+*.pgw
+*.aux.xml
+*.gpkg
+
+# 浏览器驱动（由用户自行放置或安装）
+geckodriver.exe
+chromedriver.exe
+
+# 项目工作记忆与元数据（开发过程记录，不入库）
+.workbuddy/
+
+# IDE / OS
+.idea/
+.vscode/
+Thumbs.db
+Desktop.ini

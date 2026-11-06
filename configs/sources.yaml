@@ -1,0 +1,115 @@
+# 数据源注册（docs/configuration.md §1）
+# 未公开参数（高德 ltype、百度 udt）集中在本文件维护，启动自检失败时告警并降级。
+sources:
+  tianditu:                          # 默认源（合规优先）
+    enabled: true
+    default: true
+    crs: CGCS2000                    # 无加密偏移
+    key_env: MAPFETCH_TK_TIANDITU
+    # 浏览器端 Key 走服务端直连时必填：需与控制台「Referer 白名单」一致，否则
+    # 天地图返回 403 / code 301012「Key权限类型为:浏览器端，请使用浏览器访问」。
+    # 换成服务端 Key 后可删除本行（留空即不发送 Referer）。
+    referer: "https://lbs.tianditu.gov.cn/"
+    # 在线预览底图样式（浏览/框选 AOI 用，独立于下面的抓取 styles）：
+    # 在线底图走天地图静态地图服务（staticimage），一次请求返回整张图、加载快，
+    # 默认用矢量底图 vec_w；卫星 img_w 作为加载失败时的降级样式。
+    # 注意：静态图服务的图层名与瓦片不同（vec_w→vec_c,cva_c、img_w→img_c,cva_c），
+    # 映射关系在 mapview.html 的 STATIC_LAYERS 中维护。
+    preview_style: vec_w
+    preview_fallback_style: img_w
+    subdomains: [t0, t1, t2, t3, t4, t5, t6, t7]
+    attribution: "数据来源：天地图（© 国家基础地理信息中心，GS审图号见各图层瓦片）"
+    styles:
+      img_w:
+        name: 影像底图
+        url: "https://{s}.tianditu.gov.cn/DataServer?T=img_w&x={x}&y={y}&l={z}&tk={tk}"
+        max_level: 18
+      cia_w:
+        name: 影像注记
+        url: "https://{s}.tianditu.gov.cn/DataServer?T=cia_w&x={x}&y={y}&l={z}&tk={tk}"
+        max_level: 18
+      vec_w:
+        name: 矢量底图
+        url: "https://{s}.tianditu.gov.cn/DataServer?T=vec_w&x={x}&y={y}&l={z}&tk={tk}"
+        max_level: 18
+      cva_w:
+        name: 矢量注记
+        url: "https://{s}.tianditu.gov.cn/DataServer?T=cva_w&x={x}&y={y}&l={z}&tk={tk}"
+        max_level: 18
+      ter_w:
+        name: 地形晕渲
+        url: "https://{s}.tianditu.gov.cn/DataServer?T=ter_w&x={x}&y={y}&l={z}&tk={tk}"
+        max_level: 17
+      ibo_w:
+        name: 全球境界
+        url: "https://t{s}.tianditu.gov.cn/DataServer?T=ibo_w&x={x}&y={y}&l={z}&tk={tk}"
+        max_level: 10
+    # 行政区划 Web 服务 API（行政区边界查询 aoi / admin:，替代高德 District）。
+    # 用主 Key（tianditu）即可访问，浏览器端 Key 需带 Referer（见上方 referer 配置）。
+    rest:
+      district: "https://api.tianditu.gov.cn/v2/administrative"
+
+  amap:
+    enabled: true
+    default: false
+    crs: GCJ02
+    key_env: MAPFETCH_KEY_AMAP_JS         # 主 Key：JS API（引擎 B）
+    rest_key_env: MAPFETCH_KEY_AMAP_REST  # REST Key：Web 服务（行政区查询）
+    subdomains: ["1", "2", "3", "4"]
+    attribution: "数据来源：高德地图（© 高德软件有限公司）"
+    styles:
+      satellite:
+        name: 影像
+        url: "https://webst0{s}.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}"
+        max_level: 18
+      street:
+        name: 街道详图
+        url: "https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}"
+        max_level: 19
+      street_lite:
+        name: 街道简图
+        url: "https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}"
+        max_level: 19
+      road:
+        name: 道路纯图
+        # ⚠️ ltype=11 为未公开参数，需  实测并纳入启动自检
+        url: "https://wprd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scl=1&style=8&ltype=11&x={x}&y={y}&z={z}"
+        max_level: 19
+    rest:
+      district: "https://restapi.amap.com/v3/config/district"
+    render_templates: [rd, bld, water, green, bld3d]   # 引擎 B
+    # 引擎 B 渲染底图样式（mapStyle）——配置于 configs/keys.txt 的 amap_mapstyle。
+    # 免费版自定义地图只能发布 1 个样式，样式 ID 保持不变；每次根据要获取的要素，
+    # 在高德控制台「自定义地图」改样式设置即可（如获取绿地：其余内容不显示、绿地
+    # 显示、用系统默认颜色）。留空 = 各模板回退内置默认（rd→darkblue、bld→blue、
+    # water/green→normal）。
+    # 官方预置 darkblue 的道路配色为暗色系、与背景对比度极低（截图上"道路缺失/
+    # 看不清"的主因）。推荐在高德控制台「自定义地图」基于 darkblue 制作样式：
+    # 背景/陆地设为纯黑 #000000、各级道路设为白色、关闭网格与标注纹理，发布后
+    # 把样式 ID 填到 keys.txt 的 amap_mapstyle（配合 amap_security 安全密钥）。
+    # bld 模板固定用官方预置 blue（免费版自定义地图无法设置建筑物图层，blue 的
+    # 建筑为亮色填充、对比度好）；water/green 用同一 amap_mapstyle 样式（改样式
+    # 设置后重新发布，ID 不变）。
+    # 高德 JS API 2.0 安全密钥（securityJsCode）：2021-12 后申请的 Key **必配**，
+    # 否则自定义样式不生效（回退默认样式）。两种配置方式：
+    #   ① keys.txt 里 amap_security=安全密钥（推荐，不入库）
+    #   ② 环境变量 MAPFETCH_SECURITY_AMAP
+    # 获取：高德控制台 → 我的应用 → 对应 Key → securityJsCode。
+    security_env: MAPFETCH_SECURITY_AMAP
+
+  baidu:
+    enabled: true
+    default: false
+    crs: BD09MC                      # 瓦片编号基准
+    key_env: MAPFETCH_KEY_BAIDU
+    subdomains: ["0", "1", "2", "3"]
+    attribution: "数据来源：百度地图（© 百度在线网络技术（北京）有限公司）"
+    styles:
+      street:
+        name: 街道图
+        url: "http://online{s}.map.bdimg.com/onlinelabel/?qt=tile&x={x}&y={y}&z={z}&styles=pl&udt={udt}"
+        max_level: 19
+      satellite:
+        name: 卫星
+        url: "http://shangetu{s}.map.bdimg.com/it/u=x={x};y={y};z={z};v=009;type=sate&fm=46"
+        max_level: 19

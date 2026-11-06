@@ -1,0 +1,21 @@
+<!doctype html><html><head><meta charset="utf-8">
+<style>html,body,#c{width:100%;height:100%;margin:0}
+.amap-logo,.amap-copyright,.amap-logo img{display:none!important}</style></head><body>
+<div id="c"></div>
+<script>window._AMapSecurityConfig={securityJsCode:'4bace9bebb7f81dc11f336de73772832'}</script><script src="https://webapi.amap.com/maps?v=2.0&key=9c4dc6a91d61e98b642e17622e063a5b"></script>
+<script>
+var map=new AMap.Map('c',{viewMode:'3D',zoom:17,features:['building'],
+center:[121.46004685150632,31.24197870450413]});
+map.on('complete',function(){window.__mapReady=1;});
+function setProbe(h){ // 3D 遮挡法探针（§1.5 模式 3）
+  if(window._probe){map.remove(window._probe);}
+  var b=map.getBounds();
+  window._probe=new AMap.Polygon({
+    path:[[b.southWest.lng,b.southWest.lat],[b.northEast.lng,b.southWest.lat],
+          [b.northEast.lng,b.northEast.lat],[b.southWest.lng,b.northEast.lat]],
+    fillColor:'#000000',extrusionHeight:h,roofColor:'#000000',
+    wallColor:'#000000',strokeWeight:0});
+  map.add(window._probe);
+}
+setProbe(0.01);
+</script></body></html>

@@ -1,0 +1,42 @@
+# MapFetch 密钥配置（docs/installation.md §4）
+#
+# 复制本文件为 configs/keys.txt 并填入真实 Key：
+#   cp configs/keys.txt.example configs/keys.txt
+# keys.txt 已被 .gitignore 排除，不会入库。
+#
+# 格式：每行 key=value，支持两种取值（同一 Key 二选一，直填优先）：
+#   tianditu=你的Key                        # 直接填写
+#   tianditu=env:MAPFETCH_TK_TIANDITU       # 从环境变量读取
+# 留空 = 未配置，运行时回退到 sources.yaml 中 key_env 指定的环境变量。
+#
+# 各 Key 用途（使用场景）：
+#   tianditu   天地图 tk。用于：引擎 A 全部天地图瓦片（img_w/vec_w/cia_w/cva_w/ter_w/ibo_w）
+#              与 GUI 在线预览。浏览器端 Key 直连服务端接口时工具会自动带 Referer。
+#              （行政区边界查询已改走 DataV GeoAtlas，无需 Key，与天地图 Key 无关。）
+#              申请：lbs.tianditu.gov.cn 注册实名 → 控制台创建应用。
+#   amap_js    高德 Web端(JS API) Key。用于：引擎 B 渲染（render/floors 子命令，
+#              道路/建筑/背景/层数扫描模板页加载）。申请：lbs.amap.com 控制台 →
+#              应用管理 → 添加 Key，类型选【Web端(JS API)】。
+#   amap_rest  高德 Web服务 Key。已不再用于行政区边界查询（该功能已改走 DataV GeoAtlas），
+#              保留仅为兼容，无需填写。申请：同上加 Key，类型选【Web服务】。
+#   baidu      百度浏览器端/服务端 Key。用于：引擎 A 百度瓦片（street/satellite）。
+#              申请：lbsyun.baidu.com 控制台 → 创建应用。
+#   amap_security 高德 JS API 2.0 安全密钥（securityJsCode）。2021-12 后申请的
+#              Key 必配：不配置时引擎 B 渲染的自定义样式不生效（回退默认样式）。
+#              获取：高德控制台 → 我的应用 → 对应 amap_js Key → securityJsCode。
+#   amap_mapstyle 高德自定义地图样式 ID（引擎 B 渲染模板 rd/water/green 的 mapStyle）。
+#              官方预置 darkblue 的道路为暗色、二值化效果差，建议在高德控制台
+#              「自定义地图」基于 darkblue 制作样式（背景纯黑、道路纯白）后把样式 ID
+#              填到这里。免费版只能发布 1 个样式，因此样式 ID 保持不变；每次
+#              根据要获取的要素内容，在高德控制台「自定义地图」里改样式设置即可，
+#              例如获取绿地时：其余内容设为不显示、绿地设为显示、并采用系统默认
+#              颜色（后续二值化按通道主导自动提取，配色无需特殊设定）。
+#              留空 = 各模板回退内置默认（rd→darkblue、bld→blue、water/green→normal）。
+#              获取：高德控制台 → 自定义地图 → 发布样式 → 复制样式 ID。
+
+tianditu=
+amap_js=
+amap_rest=
+amap_security=
+amap_mapstyle=
+baidu=
